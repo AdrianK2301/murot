@@ -49,15 +49,22 @@ const FOCUS_ZOOM = 0.7;
 // im Ruhestapel größer sein als die (bereits vergrößerte) Kastenhöhe, damit
 // sich benachbarte Kästen nicht überlappen.
 const NEUTRAL_GAP = 140;
-// Feste Kastenbreite (vor BASE_SCALE/FOCUS_ZOOM), die auch bei maximaler
-// Vergrößerung innerhalb der Bühne bleibt – so wird nie horizontal
-// beschnitten und der border-radius bleibt an allen vier Ecken erhalten.
+// Feste Kastenmaße (vor BASE_SCALE/FOCUS_ZOOM). Vergrößert wird über echte
+// Breite/Höhe/Schriftgröße (nicht über CSS transform: scale), damit Kästen
+// und Text beim Vergrößern gestochen scharf bleiben statt unscharf
+// hochskaliert zu wirken.
 const BOX_WIDTH = 190;
-// Zusätzlicher Zoom auf den Textblock, wenn eine Schicht im Fokus ist.
-const TEXT_ZOOM = 0.15;
-// Wie weit das gesamte Kasten+Text-Paar nach unten zur Bildschirmmitte
-// wandert, sobald eine Schicht im Fokus ist.
-const ENGAGED_SHIFT_DOWN = 60;
+const BOX_HEIGHT = 96;
+const BOX_FONT_SIZE = 16;
+const BOX_RADIUS = 16;
+// Zusätzlicher Zoom auf den Textblock (Schriftgröße), wenn eine Schicht im
+// Fokus ist.
+const TEXT_ZOOM = 0.2;
+const TEXT_FONT_SIZE = 16;
+// Fester Abstand von oben in Ruhe; sobald eine Schicht im Fokus ist, wandert
+// das Kasten+Text-Paar so weit nach unten, dass es innerhalb der sichtbaren
+// Bühne vertikal zentriert steht (auf Basis der tatsächlich gemessenen Höhen).
+const TOP_OFFSET = 24;
 // Sanftes Nachziehen der angezeigten Position hinter dem eigentlichen
 // Scroll-Fortschritt her (0 < SMOOTHING <= 1, kleiner = weicher).
 const SMOOTHING = 0.12;
@@ -101,12 +108,21 @@ function styleForIndex(scaled: number, index: number, engagement: number) {
   const pushY = pushOffsetFor(scaled, index);
   const translateY = neutralY + (pushY - neutralY) * engagement;
   const scale = BASE_SCALE + focus * FOCUS_ZOOM;
-  const textScale = 1 + focus * TEXT_ZOOM;
-  return { focus, translateY, scale, textScale };
+  const textFontSize = TEXT_FONT_SIZE * (1 + focus * TEXT_ZOOM);
+  return {
+    focus,
+    translateY,
+    boxWidth: BOX_WIDTH * scale,
+    boxHeight: BOX_HEIGHT * scale,
+    boxFontSize: BOX_FONT_SIZE * scale,
+    boxRadius: BOX_RADIUS * scale,
+    textFontSize,
+  };
 }
 
 export function LayerShowcase() {
   const sectionRef = useRef<HTMLDivElement>(null);
+  const stickyRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const boxRefs = useRef<(HTMLDivElement | null)[]>([]);
   const textRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -141,28 +157,45 @@ export function LayerShowcase() {
     const applyStyles = (scaled: number) => {
       const engagement = engagementFor(scaled);
 
+      // Kasten+Text-Paar so weit nach unten schieben, dass es innerhalb der
+      // sichtbaren Bühne vertikal zentriert steht – auf Basis der
+      // tatsächlich gemessenen Höhen, damit das auf jeder Bildschirmgröße
+      // passt (kein fester Pixel-Wert).
+      const stickyEl = stickyRef.current;
       const row = rowRef.current;
-      if (row) {
-        row.style.transform = `translateY(${engagement * ENGAGED_SHIFT_DOWN}px)`;
+      if (stickyEl && row) {
+        const stickyHeight = stickyEl.clientHeight;
+        const rowHeight = row.getBoundingClientRect().height;
+        const centeredTop = Math.max(TOP_OFFSET, (stickyHeight - rowHeight) / 2);
+        row.style.transform = `translateY(${(centeredTop - TOP_OFFSET) * engagement}px)`;
       }
 
       layers.forEach((_layer, index) => {
-        const { focus, translateY, scale, textScale } = styleForIndex(
-          scaled,
-          index,
-          engagement,
-        );
+        const {
+          focus,
+          translateY,
+          boxWidth,
+          boxHeight,
+          boxFontSize,
+          boxRadius,
+          textFontSize,
+        } = styleForIndex(scaled, index, engagement);
 
         const box = boxRefs.current[index];
         if (box) {
-          box.style.transform = `translate(-50%, calc(-50% + ${translateY}px)) scale(${scale})`;
+          box.style.transform = `translate(-50%, calc(-50% + ${translateY}px))`;
+          box.style.width = `${boxWidth}px`;
+          box.style.height = `${boxHeight}px`;
+          box.style.fontSize = `${boxFontSize}px`;
+          box.style.borderRadius = `${boxRadius}px`;
           box.style.zIndex = String(Math.round(focus * 100));
         }
 
         const text = textRefs.current[index];
         if (text) {
           text.style.opacity = String(focus);
-          text.style.transform = `translateX(${(1 - focus) * 20}px) scale(${textScale})`;
+          text.style.fontSize = `${textFontSize}px`;
+          text.style.transform = `translateX(${(1 - focus) * 20}px)`;
           text.style.pointerEvents = focus > 0.5 ? "auto" : "none";
         }
       });
@@ -220,8 +253,15 @@ export function LayerShowcase() {
         </Container>
       ) : (
         <div ref={sectionRef} style={{ height: `${TOTAL_UNITS * 100}vh` }}>
-          <div className="sticky top-[73px] flex h-[calc(100vh-73px)] items-start justify-center pt-4 sm:pt-8">
-            <div ref={rowRef} className="w-full will-change-transform">
+          <div
+            ref={stickyRef}
+            className="sticky top-[73px] h-[calc(100vh-73px)]"
+          >
+            <div
+              ref={rowRef}
+              className="w-full will-change-transform"
+              style={{ paddingTop: TOP_OFFSET }}
+            >
               <Container className="grid w-full items-center gap-8 lg:grid-cols-2 lg:gap-16">
                 <div className="relative mx-auto h-[520px] w-full max-w-xl overflow-hidden sm:h-[580px]">
                   {layers.map((layer, index) => {
@@ -233,13 +273,16 @@ export function LayerShowcase() {
                         ref={(el) => {
                           boxRefs.current[index] = el;
                         }}
-                        className={`absolute top-1/2 left-1/2 flex h-24 items-center justify-center rounded-2xl border border-border/60 px-6 text-center shadow-lg will-change-transform ${layer.color}`}
+                        className={`absolute top-1/2 left-1/2 flex items-center justify-center border border-border/60 px-[1.5em] text-center shadow-lg will-change-transform ${layer.color}`}
                         style={{
-                          width: BOX_WIDTH,
-                          transform: `translate(-50%, calc(-50% + ${initial.translateY}px)) scale(${initial.scale})`,
+                          width: initial.boxWidth,
+                          height: initial.boxHeight,
+                          fontSize: initial.boxFontSize,
+                          borderRadius: initial.boxRadius,
+                          transform: `translate(-50%, calc(-50% + ${initial.translateY}px))`,
                         }}
                       >
-                        <span className="text-base font-semibold text-white">
+                        <span className="text-[1em] font-semibold text-white">
                           {layer.name}
                         </span>
                       </div>
@@ -260,18 +303,18 @@ export function LayerShowcase() {
                         className="absolute inset-0 flex flex-col justify-center"
                         style={{
                           opacity: initial.focus,
-                          transform: `translateX(${(1 - initial.focus) * 20}px) scale(${initial.textScale})`,
-                          transformOrigin: "left center",
+                          fontSize: initial.textFontSize,
+                          transform: `translateX(${(1 - initial.focus) * 20}px)`,
                           pointerEvents: initial.focus > 0.5 ? "auto" : "none",
                         }}
                       >
-                        <span className="text-sm font-semibold tracking-wide text-accent uppercase">
+                        <span className="text-[0.875em] font-semibold tracking-wide text-accent uppercase">
                           Schicht {index + 1} / {STEP_COUNT}
                         </span>
-                        <h3 className="mt-2 text-2xl font-semibold text-ink sm:text-3xl">
+                        <h3 className="mt-2 text-[1.5em] font-semibold text-ink sm:text-[1.875em]">
                           {layer.name}
                         </h3>
-                        <p className="mt-3 max-w-md text-base leading-relaxed text-muted">
+                        <p className="mt-3 max-w-md text-[1em] leading-relaxed text-muted">
                           {layer.detail}
                         </p>
                       </div>
