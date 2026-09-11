@@ -39,15 +39,20 @@ const STEP_COUNT = layers.length;
 const EDGE_PADDING = 0.5;
 const TOTAL_UNITS = STEP_COUNT + EDGE_PADDING * 2;
 const FOCUS_RAMP = 0.75;
-const PUSH_DISTANCE = 170;
+// Wie weit die nicht fokussierten "Kästen2" (die Kästen, während sie im
+// Scroll-Effekt auseinandergeschoben werden) vom fokussierten Kasten
+// wegrücken. Groß genug gewählt, damit trotz der deutlich größeren
+// Kastenmaße immer sichtbarer Abstand zwischen den Schichten bleibt.
+const PUSH_DISTANCE = 230;
 // Grundgröße der Kästen schon in Ruhe (vor dem Scroll-Effekt): 50 % größer
 // als die ursprüngliche Kastengröße.
 const BASE_SCALE = 1.5;
 // Zusätzlicher Zoom obendrauf, wenn eine Schicht aktiv im Fokus ist.
 const FOCUS_ZOOM = 0.7;
-// Boxen sind immer voll deckend (kein Verblassen), deshalb muss der Abstand
-// im Ruhestapel größer sein als die (bereits vergrößerte) Kastenhöhe, damit
-// sich benachbarte Kästen nicht überlappen.
+// Abstand im Ruhestapel der "Kästen1" (Aufbau-Ansicht, bevor der
+// Scroll-Effekt greift). Boxen sind immer voll deckend (kein Verblassen),
+// deshalb muss der Abstand größer sein als die (bereits vergrößerte)
+// Kastenhöhe, damit sich benachbarte Kästen nicht überlappen.
 const NEUTRAL_GAP = 140;
 // Feste Kastenmaße (vor BASE_SCALE/FOCUS_ZOOM). Vergrößert wird über echte
 // Breite/Höhe/Schriftgröße (nicht über CSS transform: scale), damit Kästen
@@ -79,7 +84,7 @@ function focusFor(scaled: number, index: number) {
   return clamp(1 - distance / FOCUS_RAMP, 0, 1);
 }
 
-// Zielposition, wenn eine Schicht aktiv im Fokus ist: fokussierte Schicht
+// Position der "Kästen2" (Kästen im Scroll-Effekt): die fokussierte Schicht
 // wandert zur Mitte, alle anderen werden proportional zu ihrem Abstand
 // weiter weggeschoben (noch nicht dran = nach unten, schon erklärt = nach oben).
 function pushOffsetFor(scaled: number, index: number) {
@@ -87,9 +92,9 @@ function pushOffsetFor(scaled: number, index: number) {
   return (center - scaled) * PUSH_DISTANCE;
 }
 
-// Ruheposition, wenn gerade keine Schicht im Fokus ist (Start/Ende der
-// Sektion sowie kurz beim Wechsel zwischen zwei Schichten): ein ruhiger,
-// kompakter Stapel aller 4 Kästen.
+// Position der "Kästen1" (Ruhestapel der Aufbau-Ansicht), wenn gerade keine
+// Schicht im Fokus ist (Start/Ende der Sektion sowie kurz beim Wechsel
+// zwischen zwei Schichten): ein ruhiger, kompakter Stapel aller 4 Kästen.
 function neutralOffsetFor(index: number) {
   return (index - (STEP_COUNT - 1) / 2) * NEUTRAL_GAP;
 }
