@@ -39,8 +39,19 @@ const STEP_COUNT = layers.length;
 const EDGE_PADDING = 0.5;
 const TOTAL_UNITS = STEP_COUNT + EDGE_PADDING * 2;
 const FOCUS_RAMP = 0.75;
-const PUSH_DISTANCE = 190;
-const NEUTRAL_GAP = 64;
+const PUSH_DISTANCE = 170;
+// Boxen sind jetzt immer voll deckend (kein Verblassen mehr), deshalb muss
+// der Abstand im Ruhestapel größer als die Kastenhöhe sein, damit sich
+// benachbarte Kästen nicht überlappen.
+const NEUTRAL_GAP = 112;
+const MAX_ZOOM = 0.4;
+// Feste Kastenbreite, die auch bei maximalem Zoom (1 + MAX_ZOOM) innerhalb
+// der Bühne bleibt – so wird nie horizontal beschnitten und der
+// border-radius bleibt an allen vier Ecken erhalten.
+const BOX_WIDTH = 260;
+// Sanftes Nachziehen der angezeigten Position hinter dem eigentlichen
+// Scroll-Fortschritt her (0 < SMOOTHING <= 1, kleiner = weicher).
+const SMOOTHING = 0.12;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -67,9 +78,24 @@ function neutralOffsetFor(index: number) {
   return (index - (STEP_COUNT - 1) / 2) * NEUTRAL_GAP;
 }
 
+function styleForIndex(scaled: number, index: number) {
+  const engagement = clamp(
+    layers.reduce((sum, _layer, i) => sum + focusFor(scaled, i), 0),
+    0,
+    1,
+  );
+  const focus = focusFor(scaled, index);
+  const neutralY = neutralOffsetFor(index);
+  const pushY = pushOffsetFor(scaled, index);
+  const translateY = neutralY + (pushY - neutralY) * engagement;
+  const scale = 1 + focus * MAX_ZOOM;
+  return { focus, translateY, scale };
+}
+
 export function LayerShowcase() {
   const sectionRef = useRef<HTMLDivElement>(null);
-  const [scaled, setScaled] = useState(-EDGE_PADDING);
+  const boxRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const textRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [reducedMotion, setReducedMotion] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -86,33 +112,52 @@ export function LayerShowcase() {
   useEffect(() => {
     if (reducedMotion) return;
 
-    let ticking = false;
+    let frameId: number;
+    let current = -EDGE_PADDING;
 
-    const updateProgress = () => {
+    const targetProgress = () => {
       const el = sectionRef.current;
-      ticking = false;
-      if (!el) return;
-
+      if (!el) return -EDGE_PADDING;
       const rect = el.getBoundingClientRect();
       const scrollable = rect.height - window.innerHeight;
-      const raw =
-        scrollable > 0 ? clamp(-rect.top / scrollable, 0, 1) : 0;
-      setScaled(raw * TOTAL_UNITS - EDGE_PADDING);
+      const raw = scrollable > 0 ? clamp(-rect.top / scrollable, 0, 1) : 0;
+      return raw * TOTAL_UNITS - EDGE_PADDING;
     };
 
-    const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(updateProgress);
+    const applyStyles = (scaled: number) => {
+      layers.forEach((_layer, index) => {
+        const { focus, translateY, scale } = styleForIndex(scaled, index);
+
+        const box = boxRefs.current[index];
+        if (box) {
+          box.style.transform = `translate(-50%, calc(-50% + ${translateY}px)) scale(${scale})`;
+          box.style.zIndex = String(Math.round(focus * 100));
+        }
+
+        const text = textRefs.current[index];
+        if (text) {
+          text.style.opacity = String(focus);
+          text.style.transform = `translateX(${(1 - focus) * 20}px)`;
+          text.style.pointerEvents = focus > 0.5 ? "auto" : "none";
+        }
+      });
     };
 
-    updateProgress();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
+    // Direkt an der korrekten Position starten, ohne beim Laden der Seite
+    // einmal quer über den Bildschirm zu fliegen.
+    current = targetProgress();
+    applyStyles(current);
+
+    const tick = () => {
+      const target = targetProgress();
+      current += (target - current) * SMOOTHING;
+      if (Math.abs(target - current) < 0.001) current = target;
+      applyStyles(current);
+      frameId = requestAnimationFrame(tick);
     };
+
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
   }, [reducedMotion]);
 
   return (
@@ -152,61 +197,43 @@ export function LayerShowcase() {
         <div ref={sectionRef} style={{ height: `${TOTAL_UNITS * 100}vh` }}>
           <div className="sticky top-0 flex h-screen items-center">
             <Container className="grid w-full items-center gap-8 lg:grid-cols-2 lg:gap-16">
-              <div className="relative mx-auto h-[360px] w-full max-w-sm overflow-hidden sm:h-[420px]">
-                {(() => {
-                  // Engagement: 0 = keine Schicht im Fokus (Ruhestapel),
-                  // 1 = eine Schicht ist vollständig im Fokus.
-                  const engagement = clamp(
-                    layers.reduce(
-                      (sum, _layer, i) => sum + focusFor(scaled, i),
-                      0,
-                    ),
-                    0,
-                    1,
+              <div className="relative mx-auto h-[420px] w-full max-w-md overflow-hidden sm:h-[480px]">
+                {layers.map((layer, index) => {
+                  const initial = styleForIndex(-EDGE_PADDING, index);
+                  return (
+                    <div
+                      key={layer.name}
+                      ref={(el) => {
+                        boxRefs.current[index] = el;
+                      }}
+                      className={`absolute top-1/2 left-1/2 flex h-24 items-center justify-center rounded-2xl border border-border/60 px-6 text-center shadow-lg will-change-transform ${layer.color}`}
+                      style={{
+                        width: BOX_WIDTH,
+                        transform: `translate(-50%, calc(-50% + ${initial.translateY}px)) scale(${initial.scale})`,
+                      }}
+                    >
+                      <span className="text-base font-semibold text-white">
+                        {layer.name}
+                      </span>
+                    </div>
                   );
-
-                  return layers.map((layer, index) => {
-                    const focus = focusFor(scaled, index);
-                    const neutralY = neutralOffsetFor(index);
-                    const pushY = pushOffsetFor(scaled, index);
-                    const translateY =
-                      neutralY + (pushY - neutralY) * engagement;
-                    const scale = 1 + focus * 0.55;
-
-                    return (
-                      <div
-                        key={layer.name}
-                        className={`absolute inset-x-0 top-1/2 flex h-24 items-center justify-center rounded-2xl border border-border/60 px-6 text-center shadow-lg ${layer.color}`}
-                        style={{
-                          transform: `translateY(calc(-50% + ${translateY}px)) scale(${scale})`,
-                          opacity: 0.25 + focus * 0.75,
-                          zIndex: Math.round(focus * 100),
-                          transition:
-                            "transform 80ms ease-out, opacity 150ms ease-out",
-                        }}
-                      >
-                        <span className="text-base font-semibold text-white">
-                          {layer.name}
-                        </span>
-                      </div>
-                    );
-                  });
-                })()}
+                })}
               </div>
 
               <div className="relative h-[220px]">
                 {layers.map((layer, index) => {
-                  const focus = focusFor(scaled, index);
+                  const initial = styleForIndex(-EDGE_PADDING, index);
                   return (
                     <div
                       key={layer.name}
+                      ref={(el) => {
+                        textRefs.current[index] = el;
+                      }}
                       className="absolute inset-0 flex flex-col justify-center"
                       style={{
-                        opacity: focus,
-                        transform: `translateX(${(1 - focus) * 24}px)`,
-                        transition:
-                          "transform 150ms ease-out, opacity 150ms ease-out",
-                        pointerEvents: focus > 0.5 ? "auto" : "none",
+                        opacity: initial.focus,
+                        transform: `translateX(${(1 - initial.focus) * 20}px)`,
+                        pointerEvents: initial.focus > 0.5 ? "auto" : "none",
                       }}
                     >
                       <span className="text-sm font-semibold tracking-wide text-accent uppercase">
