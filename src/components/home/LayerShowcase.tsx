@@ -44,11 +44,11 @@ const PUSH_DISTANCE = 170;
 // der Abstand im Ruhestapel größer als die Kastenhöhe sein, damit sich
 // benachbarte Kästen nicht überlappen.
 const NEUTRAL_GAP = 112;
-const MAX_ZOOM = 0.4;
+const MAX_ZOOM = 0.85;
 // Feste Kastenbreite, die auch bei maximalem Zoom (1 + MAX_ZOOM) innerhalb
 // der Bühne bleibt – so wird nie horizontal beschnitten und der
 // border-radius bleibt an allen vier Ecken erhalten.
-const BOX_WIDTH = 260;
+const BOX_WIDTH = 230;
 // Sanftes Nachziehen der angezeigten Position hinter dem eigentlichen
 // Scroll-Fortschritt her (0 < SMOOTHING <= 1, kleiner = weicher).
 const SMOOTHING = 0.12;
@@ -161,7 +161,7 @@ export function LayerShowcase() {
   }, [reducedMotion]);
 
   return (
-    <section className="bg-surface py-20 sm:py-28">
+    <section className="bg-surface pt-10 pb-10 sm:pt-14 sm:pb-14">
       <Container>
         <SectionHeading
           eyebrow="Aufbau"
@@ -195,9 +195,9 @@ export function LayerShowcase() {
         </Container>
       ) : (
         <div ref={sectionRef} style={{ height: `${TOTAL_UNITS * 100}vh` }}>
-          <div className="sticky top-0 flex h-screen items-center">
+          <div className="sticky top-[73px] flex h-[calc(100vh-73px)] items-start justify-center pt-8 sm:pt-12">
             <Container className="grid w-full items-center gap-8 lg:grid-cols-2 lg:gap-16">
-              <div className="relative mx-auto h-[420px] w-full max-w-md overflow-hidden sm:h-[480px]">
+              <div className="relative mx-auto h-[420px] w-full max-w-lg overflow-hidden sm:h-[480px]">
                 {layers.map((layer, index) => {
                   const initial = styleForIndex(-EDGE_PADDING, index);
                   return (
